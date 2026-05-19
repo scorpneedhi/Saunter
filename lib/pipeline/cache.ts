@@ -53,6 +53,17 @@ async function pg(): Promise<{
              hash text UNIQUE NOT NULL,
              payload jsonb NOT NULL,
              created_at timestamptz NOT NULL DEFAULT now()
+           );
+           CREATE TABLE IF NOT EXISTS tour_events (
+             id bigserial PRIMARY KEY,
+             type text NOT NULL,
+             city_slug text,
+             slug text,
+             ms integer,
+             narrated boolean,
+             error text,
+             ip_hash text,
+             created_at timestamptz NOT NULL DEFAULT now()
            )`
         )
         .then(() => true)
@@ -123,6 +134,122 @@ export async function listTours(limit = 9): Promise<Tour[]> {
     return rows.map((r) => r.payload as Tour);
   } catch {
     return [];
+  }
+}
+
+export interface TourEvent {
+  type: "generate_request" | "generate_success" | "generate_error" | "tour_view";
+  citySlug?: string;
+  slug?: string;
+  ms?: number;
+  narrated?: boolean;
+  error?: string;
+  ipHash?: string;
+}
+
+// Best-effort analytics persistence. Mirrors save()'s degrade pattern
+// exactly: if DATABASE_URL is unset pg() returns null and this is a pure
+// no-op; if the pool or INSERT throws we swallow it. Generation and page
+// renders must NEVER fail because an event could not be recorded.
+export async function logEvent(e: TourEvent): Promise<void> {
+  let db: Awaited<ReturnType<typeof pg>> = null;
+  try {
+    db = await pg();
+  } catch {
+    return; // pg() already degrades, but guard the await defensively too
+  }
+  if (!db) return; // no DATABASE_URL, or table bootstrap failed
+  try {
+    await db.query(
+      `INSERT INTO tour_events (type, city_slug, slug, ms, narrated, error, ip_hash)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        e.type,
+        e.citySlug ?? null,
+        e.slug ?? null,
+        e.ms ?? null,
+        e.narrated ?? null,
+        e.error ?? null,
+        e.ipHash ?? null,
+      ]
+    );
+  } catch {
+    /* analytics is best-effort; a write failure must never surface */
+  }
+}
+
+// Aggregations for the PRD §10 launch-week scorecard. Documented SQL lives in
+// docs/metrics.sql; this helper exposes the same numbers to an internal
+// dashboard/route without shipping raw SQL into app code. Degrades to an
+// empty result with DATABASE_URL unset (events live only in Postgres).
+export interface MetricsSummary {
+  generateRequests: number;
+  generateSuccess: number;
+  generateError: number;
+  errorRate: number; // generate_error / generate_request, 0 when no requests
+  uniqueVisitors: number; // distinct ip_hash on tour_view
+  tourViews: number;
+  toursShared: number; // proxy: distinct slugs viewed from >1 distinct ip_hash
+  p50Ms: number | null;
+  p95Ms: number | null;
+}
+
+export async function metricsSummary(
+  sinceHours = 24 * 7
+): Promise<MetricsSummary> {
+  const empty: MetricsSummary = {
+    generateRequests: 0,
+    generateSuccess: 0,
+    generateError: 0,
+    errorRate: 0,
+    uniqueVisitors: 0,
+    tourViews: 0,
+    toursShared: 0,
+    p50Ms: null,
+    p95Ms: null,
+  };
+  const db = await pg();
+  if (!db) return empty;
+  try {
+    const { rows } = await db.query(
+      `WITH win AS (
+         SELECT * FROM tour_events
+         WHERE created_at >= now() - ($1 || ' hours')::interval
+       )
+       SELECT
+         (SELECT count(*) FROM win WHERE type = 'generate_request')        AS gen_req,
+         (SELECT count(*) FROM win WHERE type = 'generate_success')        AS gen_ok,
+         (SELECT count(*) FROM win WHERE type = 'generate_error')          AS gen_err,
+         (SELECT count(DISTINCT ip_hash) FROM win
+            WHERE type = 'tour_view' AND ip_hash IS NOT NULL)              AS uniq_vis,
+         (SELECT count(*) FROM win WHERE type = 'tour_view')               AS views,
+         (SELECT count(*) FROM (
+            SELECT slug FROM win
+            WHERE type = 'tour_view' AND slug IS NOT NULL AND ip_hash IS NOT NULL
+            GROUP BY slug HAVING count(DISTINCT ip_hash) > 1
+          ) s)                                                            AS shared,
+         (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY ms)
+            FROM win WHERE type = 'generate_success' AND ms IS NOT NULL)   AS p50,
+         (SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY ms)
+            FROM win WHERE type = 'generate_success' AND ms IS NOT NULL)   AS p95`,
+      [String(sinceHours)]
+    );
+    const r = rows[0] ?? {};
+    const genReq = Number(r.gen_req ?? 0);
+    const genErr = Number(r.gen_err ?? 0);
+    return {
+      generateRequests: genReq,
+      generateSuccess: Number(r.gen_ok ?? 0),
+      generateError: genErr,
+      errorRate: genReq > 0 ? genErr / genReq : 0,
+      uniqueVisitors: Number(r.uniq_vis ?? 0),
+      tourViews: Number(r.views ?? 0),
+      toursShared: Number(r.shared ?? 0),
+      p50Ms: r.p50 == null ? null : Math.round(Number(r.p50)),
+      p95Ms: r.p95 == null ? null : Math.round(Number(r.p95)),
+    };
+  } catch {
+    return empty;
   }
 }
 

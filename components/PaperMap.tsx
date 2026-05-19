@@ -14,6 +14,7 @@ import type { Stop, RoutePoint } from "@/lib/types";
 interface Props {
   stops: Stop[];
   route: RoutePoint[];
+  routeLngLat?: [number, number][]; // unused here; accepted for MapComponent parity
   activeStop: number;
   onStopClick?: (n: number) => void;
   accent: string;

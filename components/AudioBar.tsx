@@ -40,7 +40,10 @@ export function AudioBar({
   };
 
   const ticks = Array.from({ length: 41 }, (_, i) => i);
-  const pct = totalSec > 0 ? (globalSec / totalSec) * 100 : 0;
+  // globalSec can momentarily overshoot totalSec on the final stop (progress
+  // reaches 1 before playback stops) — clamp so the needle never escapes.
+  const pct =
+    totalSec > 0 ? Math.max(0, Math.min(100, (globalSec / totalSec) * 100)) : 0;
 
   return (
     <div className="audiobar audiobar-tuner">
