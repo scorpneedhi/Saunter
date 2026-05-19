@@ -89,11 +89,53 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
         tour.center.lng
       ).toFixed(4)}° ${tour.center.lng >= 0 ? "E" : "W"}`
     : "34.0782° N · 118.2606° W";
-  const [activeStop, setActiveStop] = React.useState(1);
-  const [playing, setPlaying] = React.useState(false);
+  const [activeStop, setActiveStop0] = React.useState(1);
+  const [playing, setPlaying0] = React.useState(false);
   // progress is 0..1 *within the active stop* — same semantics as before, so
   // the scroll-into-view effect and the PaperMap pulse keep working untouched.
-  const [progress, setProgress] = React.useState(0);
+  const [progress, setProgress0] = React.useState(0);
+
+  // ── Render-phase-safe state updates for the speech engine ─────────────────
+  // The narration engine pushes progress/activeStop/playing from rAF ticks,
+  // setTimeout, the keep-alive interval and SpeechSynthesisUtterance
+  // onboundary/onend/onerror handlers. Those callbacks outlive any single
+  // render: across a Fast Refresh in-place re-render (or a StrictMode /
+  // concurrent re-render), a still-live callback can fire its setter against
+  // the *previous* Tour fiber while a fresh Tour fiber is mid-render — React's
+  // "Cannot update a component (Tour) while rendering a different component
+  // (Tour)" warning. `engineAlive` drops updates once this instance is torn
+  // down; `renderingRef` defers an update by a microtask if it lands during
+  // the synchronous render phase. Both keep audio behavior identical (the
+  // deferral is sub-frame; speech calls are never gated, only React state).
+  const engineAlive = React.useRef(true);
+  const renderingRef = React.useRef(false);
+  renderingRef.current = true;
+  // Flip the flag back the instant the synchronous render stack unwinds —
+  // before any rAF/timer/speech event for this frame can run.
+  if (typeof queueMicrotask === "function") {
+    queueMicrotask(() => {
+      renderingRef.current = false;
+    });
+  }
+  React.useEffect(() => {
+    renderingRef.current = false;
+  });
+  function safeSet<T>(setter: React.Dispatch<React.SetStateAction<T>>) {
+    return (v: React.SetStateAction<T>) => {
+      if (!engineAlive.current) return;
+      if (renderingRef.current) {
+        queueMicrotask(() => {
+          if (engineAlive.current) setter(v);
+        });
+        return;
+      }
+      setter(v);
+    };
+  }
+  const setActiveStop = safeSet(setActiveStop0);
+  const setPlaying = safeSet(setPlaying0);
+  const setProgress = safeSet(setProgress0);
+
   const [shareToast, setShareToast] = React.useState(false);
   const stopRefs = React.useRef<Record<number, HTMLElement | null>>({});
   const listRef = React.useRef<HTMLDivElement>(null);
@@ -413,6 +455,17 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
       hardStop();
     };
   }, [hardStop]);
+
+  // Lifecycle gate for engine→state updates. Tied to mount/unmount only (not
+  // hardStop identity) so a torn-down or Fast-Refresh-replaced instance can't
+  // setState from a still-live rAF/timer/utterance callback. Re-arms on a
+  // StrictMode remount.
+  React.useEffect(() => {
+    engineAlive.current = true;
+    return () => {
+      engineAlive.current = false;
+    };
+  }, []);
 
   // Toggle play/pause. CRITICAL: when starting, speechSynthesis.speak() is
   // reached synchronously inside this handler (the click event) — no await,
