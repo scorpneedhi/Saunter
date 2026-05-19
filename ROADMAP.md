@@ -44,8 +44,8 @@ Maps to PRD §12 days 5–7 and §13.
 
 ## Phase 3 — Post-launch (after May 25)
 
-All four items completed ahead of schedule (May 19), on branch
-`claude/musing-bell-12e41e`.
+The four original items completed ahead of schedule (May 19), on branch
+`claude/musing-bell-12e41e`. One item added later (latinize) is still open.
 
 - [x] **Real audio narration.** Replace the simulated scrubber with browser `SpeechSynthesis` reading each stop's blurb, synced to active stop + audio bar (PRD §6.2). Currently the only major spec item still mocked.
   - **Done:** browser `SpeechSynthesis` with sentence chunking (Chrome 15s-cutoff guard), `onboundary`-driven scrubber, `onend` auto-advance, gesture-synchronous `speak()` for mobile Safari, wall-clock fallback when `onboundary` is absent. Engine setters are render-phase-safe (`safeSet`, cherry-pick `e3a9a35`). Verified via real `SpeechSynthesisUtterance` events.
@@ -55,6 +55,7 @@ All four items completed ahead of schedule (May 19), on branch
   - **Done:** structured JSON logger (`lib/log.ts`), per-step pipeline timing (`withTiming`), best-effort `tour_events` table + `metricsSummary`, generate/view/error events, and documented §10 metrics SQL (`docs/metrics.sql`). Degrades to a safe no-op when `DATABASE_URL` is unset.
 - [x] **No-Wikipedia-coverage polish.** Tune the OSM-only fallback blurbs (PRD §15) so coverage-thin neighborhoods still read well.
   - **Done:** descriptive OSM tags retained through `overpass.ts` → `enrich.ts`; varied, specific per-stop fallback copy (no more one repeated sentence); the LLM no-source branch now receives the OSM fact bundle instead of an empty marker.
+- [ ] **Latinize non-English place names.** Nominatim returns localized display names for some areas, so tour titles and the landing grid render e.g. "북촌한옥마을 ДЕРЕВНЯ" / "谷中" instead of "Bukchon" / "Yanaka" (observed on the seeded prod tours). Prefer the OSM `name:en` tag, falling back to transliteration, during geocode. Cosmetic only — links/resolution already work (the city slug segment is non-functional; `resolveTour` keys off the trailing id).
 
 ## Later — Post-MVP (PRD §14, not committed)
 
