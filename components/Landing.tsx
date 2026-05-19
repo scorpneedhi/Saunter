@@ -40,7 +40,7 @@ export async function Landing() {
     tours.length > 0
       ? tours.map((tour, i) => ({
           key: tour.slug,
-          href: `/${slugify(tour.city)}/${tour.slug}`,
+          href: `/${slugify(tour.city) || "walk"}/${tour.slug}`,
           n: String(i + 1).padStart(2, "0"),
           min: tour.duration,
           city: tour.city,
