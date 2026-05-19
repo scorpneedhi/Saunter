@@ -104,6 +104,24 @@ export async function getByHash(hash: string): Promise<TourRecord | null> {
   }
 }
 
+export async function listTours(limit = 9): Promise<Tour[]> {
+  const db = await pg();
+  if (!db) {
+    return Array.from(mem().byId.values())
+      .map((r) => r.tour)
+      .slice(0, limit);
+  }
+  try {
+    const { rows } = await db.query(
+      "SELECT payload FROM tours ORDER BY created_at DESC LIMIT $1",
+      [limit]
+    );
+    return rows.map((r) => r.payload as Tour);
+  } catch {
+    return [];
+  }
+}
+
 export async function save(rec: TourRecord): Promise<void> {
   mem().byId.set(rec.id, rec);
   mem().byHash.set(rec.hash, rec);

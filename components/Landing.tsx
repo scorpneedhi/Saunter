@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { Postcard } from "./Postcard";
 import { ECHO_PARK_TOUR, EXAMPLE_TOURS } from "@/lib/data";
+import { listTours } from "@/lib/pipeline/cache";
 import type { ExampleTour } from "@/lib/types";
 
 const slugify = (s: string) =>
@@ -14,7 +15,52 @@ const slugify = (s: string) =>
 
 const tourHref = (t: ExampleTour) => `/${slugify(t.city)}/${ECHO_PARK_TOUR.slug}`;
 
-export function Landing() {
+type Tone = ExampleTour["tone"];
+type Span = ExampleTour["span"];
+
+const TONES: Tone[] = ["ochre", "terra", "ink", "rose", "sage", "brick", "stone"];
+const SPANS: Span[] = ["wide", "tall"];
+
+interface PostcardCard {
+  key: string;
+  href: string;
+  n: string;
+  min: number;
+  city: string;
+  region: string;
+  tags: string;
+  tone: Tone;
+  span: Span;
+}
+
+export async function Landing() {
+  const tours = await listTours(9);
+
+  const cards: PostcardCard[] =
+    tours.length > 0
+      ? tours.map((tour, i) => ({
+          key: tour.slug,
+          href: `/${slugify(tour.city)}/${tour.slug}`,
+          n: String(i + 1).padStart(2, "0"),
+          min: tour.duration,
+          city: tour.city,
+          region: tour.region,
+          tags: tour.tags.join(", "),
+          tone: TONES[i % TONES.length],
+          span: SPANS[i % SPANS.length],
+        }))
+      : EXAMPLE_TOURS.map((t) => ({
+          key: t.n,
+          href: tourHref(t),
+          n: t.n,
+          min: t.min,
+          city: t.city,
+          region: t.region,
+          tags: t.tags,
+          tone: t.tone,
+          span: t.span,
+        }));
+
   return (
     <div className="screen landing">
       <header className="masthead">
@@ -68,25 +114,25 @@ export function Landing() {
         </div>
 
         <div className="postcards">
-          {EXAMPLE_TOURS.map((t, i) => (
+          {cards.map((c, i) => (
             <Link
-              key={t.n}
-              href={tourHref(t)}
-              className={`postcard tone-${t.tone} span-${t.span}`}
+              key={c.key}
+              href={c.href}
+              className={`postcard tone-${c.tone} span-${c.span}`}
               style={{ animationDelay: `${i * 60}ms` }}
             >
               <div className="postcard-stamp">
-                <span className="stamp-no">{t.n}</span>
+                <span className="stamp-no">{c.n}</span>
                 <span className="stamp-rule" />
-                <span className="stamp-min">{t.min} min</span>
+                <span className="stamp-min">{c.min} min</span>
               </div>
               <div className="postcard-art" aria-hidden="true">
-                <Postcard tone={t.tone} />
+                <Postcard tone={c.tone} />
               </div>
               <div className="postcard-foot">
-                <h3 className="postcard-city">{t.city}</h3>
-                <p className="postcard-region">{t.region}</p>
-                <p className="postcard-tags">{t.tags}</p>
+                <h3 className="postcard-city">{c.city}</h3>
+                <p className="postcard-region">{c.region}</p>
+                <p className="postcard-tags">{c.tags}</p>
               </div>
             </Link>
           ))}
