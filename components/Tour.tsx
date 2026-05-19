@@ -75,11 +75,7 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
 
   const handleShare = () => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
-      const url =
-        typeof window !== "undefined"
-          ? window.location.href
-          : `https://saunter.app/${tour.slug}`;
-      navigator.clipboard.writeText(url).catch(() => {});
+      navigator.clipboard.writeText(window.location.href).catch(() => {});
     }
     setShareToast(true);
     setTimeout(() => setShareToast(false), 2000);
