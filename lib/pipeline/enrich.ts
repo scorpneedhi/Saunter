@@ -5,6 +5,9 @@
 import { getJSON } from "./http";
 import type { Candidate } from "./overpass";
 
+// Extends Candidate, so the retained `osm` facts bundle rides through
+// untouched (the `...c` spread below preserves it) for thin-coverage
+// narration when there is no Wikipedia extract.
 export interface Enriched extends Candidate {
   extract: string; // plain-text Wikipedia summary, "" if none
   photoUrl?: string; // Commons-hosted lead image

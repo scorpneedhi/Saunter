@@ -23,6 +23,7 @@ import { computeRoute } from "./route";
 import { enrich } from "./enrich";
 import { narrate, toneFor } from "./narrate";
 import { getByHash, save, type TourRecord } from "./cache";
+import { log } from "../log";
 
 export interface GenerateInput {
   location: string;
@@ -34,6 +35,27 @@ export interface GenerateOutput {
   id: string;
   citySlug: string;
   slug: string; // `${tour-slug}-${id}` — the [slug] route param
+}
+
+// Wraps each pipeline step: measures wall-clock ms and emits one structured
+// log line, then re-raises any error untouched. Purely observational — it
+// never changes the value, ordering, or failure behavior of `fn`. Timing is
+// log-only (not persisted); see docs/metrics.sql for why.
+async function withTiming<T>(step: string, fn: () => Promise<T>): Promise<T> {
+  const start = Date.now();
+  try {
+    const result = await fn();
+    log.info("step.timing", { step, ms: Date.now() - start, ok: true });
+    return result;
+  } catch (e) {
+    log.warn("step.timing", {
+      step,
+      ms: Date.now() - start,
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    throw e;
+  }
 }
 
 export async function generateTour(
@@ -56,15 +78,19 @@ export async function generateTour(
   }
 
   // 1. Geocode
-  const geo = await geocode(location);
+  const geo = await withTiming("geocode", () => geocode(location));
   const center: LatLng = { lat: geo.lat, lng: geo.lng };
 
   // 2. POI candidates + map areas within the pace-based radius
   const radius = radiusForDuration(input.duration);
-  const { candidates, areas } = await fetchCandidates(center, radius, tags);
+  const { candidates, areas } = await withTiming("overpass", () =>
+    fetchCandidates(center, radius, tags)
+  );
 
   // 3. Score, select, order (deterministic — not the LLM)
-  const selected = selectStops(candidates, center, input.duration);
+  const selected = await withTiming("select", async () =>
+    selectStops(candidates, center, input.duration)
+  );
   if (selected.length < 4) {
     throw new PipelineError(
       "select",
@@ -73,20 +99,16 @@ export async function generateTour(
   }
 
   // 4. Pedestrian route through the ordered stops
-  const route = await computeRoute(
-    selected.map((s) => ({ lat: s.lat, lng: s.lng }))
+  const route = await withTiming("route", () =>
+    computeRoute(selected.map((s) => ({ lat: s.lat, lng: s.lng })))
   );
 
   // 5. Wikipedia summary + Commons image per stop
-  const enriched = await enrich(selected);
+  const enriched = await withTiming("enrich", () => enrich(selected));
 
   // 6. Narration grounded in the retrieved text (LLM or fallback)
-  const narration = await narrate(
-    enriched,
-    geo.city,
-    geo.region,
-    tags,
-    input.duration
+  const narration = await withTiming("narrate", () =>
+    narrate(enriched, geo.city, geo.region, tags, input.duration)
   );
 
   // Project everything into the 0..1 paper-map space.
@@ -153,6 +175,7 @@ export async function generateTour(
     center,
     areas: mapAreas,
     route: routePts,
+    routeLngLat: route.polyline.map((p) => [p.lng, p.lat] as [number, number]),
     narrated: narration.narrated,
   };
 

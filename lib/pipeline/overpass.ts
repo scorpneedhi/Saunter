@@ -13,6 +13,23 @@ export type Interest =
   | "food and drink"
   | "nature";
 
+// A curated bundle of descriptive OSM tags kept so that coverage-thin stops
+// (no Wikipedia article) still have something concrete to narrate from.
+// Only keys actually present on the element are populated.
+export interface OsmFacts {
+  description?: string;
+  historic?: string;
+  start_date?: string;
+  architect?: string;
+  street?: string; // from tags["addr:street"]
+  inscription?: string;
+  building?: string;
+  tourism?: string;
+  religion?: string;
+  operator?: string;
+  heritage?: string;
+}
+
 export interface Candidate {
   osmId: string;
   name: string;
@@ -23,6 +40,7 @@ export interface Candidate {
   hasWiki: boolean; // has wikipedia/wikidata tag → richer, ranks higher
   wikipedia?: string; // "en:Article Title"
   wikidata?: string;
+  osm?: OsmFacts; // descriptive tags retained for thin-coverage narration
 }
 
 export interface AreaPoly {
@@ -91,6 +109,29 @@ const TYPE_LABELS: { test: (t: Record<string, string>) => boolean; label: string
 function labelFor(tags: Record<string, string>): string {
   for (const { test, label } of TYPE_LABELS) if (test(tags)) return label;
   return "Place";
+}
+
+// Pick only the descriptive keys we care about, only when present and
+// non-empty, so narration can ground thin-coverage stops in real facts
+// without fabricating anything.
+function osmFactsFor(tags: Record<string, string>): OsmFacts | undefined {
+  const f: OsmFacts = {};
+  const put = (k: keyof OsmFacts, v: string | undefined) => {
+    const t = v?.trim();
+    if (t) f[k] = t;
+  };
+  put("description", tags.description);
+  put("historic", tags.historic);
+  put("start_date", tags.start_date);
+  put("architect", tags.architect);
+  put("street", tags["addr:street"]);
+  put("inscription", tags.inscription);
+  put("building", tags.building);
+  put("tourism", tags.tourism);
+  put("religion", tags.religion);
+  put("operator", tags.operator);
+  put("heritage", tags.heritage);
+  return Object.keys(f).length ? f : undefined;
 }
 
 interface OverpassEl {
@@ -185,6 +226,7 @@ out geom 40;
       hasWiki: !!(tags.wikipedia || tags.wikidata),
       wikipedia: tags.wikipedia,
       wikidata: tags.wikidata,
+      osm: osmFactsFor(tags),
     });
   }
 
