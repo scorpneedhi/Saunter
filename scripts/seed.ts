@@ -44,6 +44,16 @@ const SEED: GenerateInput[] = [
 ];
 
 async function main() {
+  if (!process.env.DATABASE_URL) {
+    console.error(
+      "DATABASE_URL not set — refusing to run. Without it the pipeline " +
+        "writes to an in-memory store that is discarded on exit, so every " +
+        "generated tour would be silently lost. Re-run with the env loaded, " +
+        'e.g. node --env-file=.env.local --import tsx scripts/seed.ts'
+    );
+    process.exit(1);
+  }
+
   let ok = 0;
   let skipped = 0;
 
