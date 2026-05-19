@@ -21,8 +21,14 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "http://localhost:3000");
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://saunter.app"),
+  metadataBase: new URL(siteUrl),
   title: "Saunter — a field guide, generated",
   description:
     "Saunter writes a walking tour of any neighborhood. Tell us where you are, how long you have, and what you want to see.",
