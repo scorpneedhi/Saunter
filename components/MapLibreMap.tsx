@@ -199,7 +199,9 @@ export function MapLibreMap({
           source: STOPS_SOURCE,
           layout: {
             "text-field": ["to-string", ["get", "n"]],
-            "text-font": ["Noto Serif Regular", "Noto Sans Regular"],
+            // OpenFreeMap serves only Noto Sans {Regular,Bold,Italic};
+            // Bold keeps the numbered markers legible.
+            "text-font": ["Noto Sans Bold"],
             "text-size": [
               "case",
               ["==", ["get", "n"], ["literal", activeStop]],

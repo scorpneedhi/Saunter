@@ -28,10 +28,12 @@ const WOOD_SAGE = "#aebb96"; // slightly deeper sage for woods
 // OpenFreeMap public planet tiles (OpenMapTiles schema). No key required.
 const OPENFREEMAP_TILES = "https://tiles.openfreemap.org/planet";
 
-// A serif-leaning glyph stack. OpenFreeMap hosts Noto fonts; "Noto Serif"
-// gives the field-guide plate feel, with a sans fallback that always exists.
-const SERIF_FONT = ["Noto Serif Italic", "Noto Sans Regular"];
-const LABEL_FONT = ["Noto Serif Regular", "Noto Sans Regular"];
+// OpenFreeMap's glyph server only serves "Noto Sans Regular/Bold/Italic"
+// (Serif and Medium 404, and combined stacks aren't composited). Each
+// fontstack below is a single confirmed-available face so labels render.
+// The serif field-guide feel lives in the page/plate (web fonts), not here.
+const SERIF_FONT = ["Noto Sans Italic"];
+const LABEL_FONT = ["Noto Sans Regular"];
 
 export function buildPaperStyle(): StyleSpecification {
   return {
