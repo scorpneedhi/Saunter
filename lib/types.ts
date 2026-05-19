@@ -54,6 +54,7 @@ export interface Tour {
   center?: { lat: number; lng: number };
   areas?: MapArea[];
   route?: RoutePoint[]; // projected walking polyline (0..1 space)
+  routeLngLat?: [number, number][]; // raw OSRM polyline [lng, lat], for MapLibre
   narrated?: boolean; // true when the LLM voice pass ran (vs. grounded fallback)
 }
 

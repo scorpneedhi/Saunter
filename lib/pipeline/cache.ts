@@ -49,6 +49,17 @@ async function pg(): Promise<{
              hash text UNIQUE NOT NULL,
              payload jsonb NOT NULL,
              created_at timestamptz NOT NULL DEFAULT now()
+           );
+           CREATE TABLE IF NOT EXISTS tour_events (
+             id bigserial PRIMARY KEY,
+             type text NOT NULL,
+             city_slug text,
+             slug text,
+             ms integer,
+             narrated boolean,
+             error text,
+             ip_hash text,
+             created_at timestamptz NOT NULL DEFAULT now()
            )`
         )
         .then(() => true)
@@ -120,6 +131,23 @@ export async function listTours(limit = 9): Promise<Tour[]> {
   } catch {
     return [];
   }
+}
+
+export interface TourEvent {
+  type: "generate_request" | "generate_success" | "generate_error" | "tour_view";
+  citySlug?: string;
+  slug?: string;
+  ms?: number;
+  narrated?: boolean;
+  error?: string;
+  ipHash?: string;
+}
+
+// Contract seam — no-op today. Agent C (analytics) fills best-effort
+// persistence here, mirroring save()'s degrade-to-memory pattern: a DB or
+// network failure must never break generation or a page render.
+export async function logEvent(_e: TourEvent): Promise<void> {
+  /* no-op until analytics lands */
 }
 
 export async function save(rec: TourRecord): Promise<void> {

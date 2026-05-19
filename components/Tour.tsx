@@ -15,6 +15,12 @@ import type { Tour as TourType, RoutePoint } from "@/lib/types";
 const ACCENT = "#2e4a32"; // deep forest
 const STOP_AUDIO_SEC = 38;
 
+// Map-flag boundary. SVG PaperMap is the default; set
+// NEXT_PUBLIC_USE_MAPLIBRE=1 to opt into the MapLibre map (Agent B wires the
+// MapLibre side here — PaperMap stays the visual reference either way).
+const USE_MAPLIBRE = process.env.NEXT_PUBLIC_USE_MAPLIBRE === "1";
+const MapComponent = USE_MAPLIBRE ? PaperMap : PaperMap;
+
 export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
   const router = useRouter();
   const routePts = tour.route ?? route;
@@ -188,7 +194,7 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
         {/* RIGHT: sticky map */}
         <div className="tour-map">
           <div className="tour-map-inner">
-            <PaperMap
+            <MapComponent
               stops={tour.stops}
               route={routePts}
               activeStop={activeStop}
