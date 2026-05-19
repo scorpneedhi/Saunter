@@ -1,5 +1,6 @@
 // Step 1 — geocode the user's free-text location via Nominatim (OSM).
 
+import { transliterate } from "transliteration";
 import { getJSON, PipelineError } from "./http";
 import type { LatLng } from "./geo";
 
@@ -12,6 +13,7 @@ interface NominatimResult {
   type?: string;
   class?: string;
   address?: Record<string, string>;
+  namedetails?: Record<string, string>;
 }
 
 export interface GeocodeResult extends LatLng {
@@ -22,7 +24,7 @@ export interface GeocodeResult extends LatLng {
 
 export async function geocode(query: string): Promise<GeocodeResult> {
   const url =
-    "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&q=" +
+    "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&namedetails=1&accept-language=en&q=" +
     encodeURIComponent(query.trim());
 
   let results: NominatimResult[];
@@ -65,10 +67,19 @@ export async function geocode(query: string): Promise<GeocodeResult> {
   return {
     lat: parseFloat(r.lat),
     lng: parseFloat(r.lon),
-    city: titleCase(city),
-    region: titleCase(region),
+    city: titleCase(latinize(city, r.namedetails)),
+    region: titleCase(latinize(region)),
     displayName: r.display_name,
   };
+}
+
+// Nominatim sometimes returns localized names even with accept-language=en
+// (e.g. 谷中, 북촌한옥마을). Prefer the OSM name:en tag, otherwise transliterate.
+function latinize(raw: string, namedetails?: Record<string, string>): string {
+  const en = namedetails?.["name:en"] || namedetails?.["name:en-US"];
+  if (en) return en;
+  if (/^[\p{Script=Latin}\s\d\p{P}]+$/u.test(raw)) return raw;
+  return transliterate(raw);
 }
 
 // Nominatim returns POIs (shops, offices) ahead of the place when the query
