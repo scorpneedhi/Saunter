@@ -2,7 +2,7 @@
 
 **Status:** Pipeline complete, pre-launch hardening.
 **Target public launch:** May 25, 2026 (PRD §1).
-**Last updated:** May 18, 2026.
+**Last updated:** May 19, 2026.
 
 This roadmap tracks what's left to ship v1 and what follows. It is grounded
 in `PRD.md` (sections referenced inline) and the current state of the build.
@@ -44,10 +44,17 @@ Maps to PRD §12 days 5–7 and §13.
 
 ## Phase 3 — Post-launch (after May 25)
 
-- [ ] **Real audio narration.** Replace the simulated scrubber with browser `SpeechSynthesis` reading each stop's blurb, synced to active stop + audio bar (PRD §6.2). Currently the only major spec item still mocked.
-- [ ] **MapLibre GL JS.** Swap the illustrated SVG paper map for MapLibre + a custom paper-style JSON, OpenFreeMap tiles (PRD §8.1 production target). Keep the SVG look as the visual reference; this is a fidelity-risk migration, sequenced after launch deliberately.
-- [ ] **Analytics + observability.** Use Postgres for tour/usage analytics (PRD §8.1); track the §10 launch-week metrics; structured pipeline logging + timing per step.
-- [ ] **No-Wikipedia-coverage polish.** Tune the OSM-only fallback blurbs (PRD §15) so coverage-thin neighborhoods still read well.
+All four items completed ahead of schedule (May 19), on branch
+`claude/musing-bell-12e41e`.
+
+- [x] **Real audio narration.** Replace the simulated scrubber with browser `SpeechSynthesis` reading each stop's blurb, synced to active stop + audio bar (PRD §6.2). Currently the only major spec item still mocked.
+  - **Done:** browser `SpeechSynthesis` with sentence chunking (Chrome 15s-cutoff guard), `onboundary`-driven scrubber, `onend` auto-advance, gesture-synchronous `speak()` for mobile Safari, wall-clock fallback when `onboundary` is absent. Engine setters are render-phase-safe (`safeSet`, cherry-pick `e3a9a35`). Verified via real `SpeechSynthesisUtterance` events.
+- [x] **MapLibre GL JS.** Swap the illustrated SVG paper map for MapLibre + a custom paper-style JSON, OpenFreeMap tiles (PRD §8.1 production target). Keep the SVG look as the visual reference; this is a fidelity-risk migration, sequenced after launch deliberately.
+  - **Done:** MapLibre GL JS on OpenFreeMap tiles with a custom paper style is now the **production default** for tours with real coordinates. Kill-switch `NEXT_PUBLIC_USE_MAPLIBRE=0` forces SVG (instant rollback, no redeploy); coordinate-less tours auto-fall back to `PaperMap`, which also still powers the OG share image. Fidelity PASS recorded on the Echo Park coords fixture; a Serif-glyph 404 was caught and fixed during verification. Documented in `.env.example` + `docs/deploy.md`.
+- [x] **Analytics + observability.** Use Postgres for tour/usage analytics (PRD §8.1); track the §10 launch-week metrics; structured pipeline logging + timing per step.
+  - **Done:** structured JSON logger (`lib/log.ts`), per-step pipeline timing (`withTiming`), best-effort `tour_events` table + `metricsSummary`, generate/view/error events, and documented §10 metrics SQL (`docs/metrics.sql`). Degrades to a safe no-op when `DATABASE_URL` is unset.
+- [x] **No-Wikipedia-coverage polish.** Tune the OSM-only fallback blurbs (PRD §15) so coverage-thin neighborhoods still read well.
+  - **Done:** descriptive OSM tags retained through `overpass.ts` → `enrich.ts`; varied, specific per-stop fallback copy (no more one repeated sentence); the LLM no-source branch now receives the OSM fact bundle instead of an empty marker.
 
 ## Later — Post-MVP (PRD §14, not committed)
 
@@ -63,4 +70,4 @@ Maps to PRD §12 days 5–7 and §13.
 
 - **Radius vs. packing** — defaulting to pace-based radius; revisit in Phase 1 with multi-city data.
 - **Cache aggressiveness** — exact-match only (implemented via content hash); near-match collapsing intentionally deferred.
-- **No Wikipedia coverage** — handled (OSM-tag fallback narration); quality pass in Phase 3.
+- **No Wikipedia coverage** — resolved. OSM-tag fallback narration plus the Phase 3 quality pass (varied per-stop copy, OSM facts to the LLM no-source branch).
