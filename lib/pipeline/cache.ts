@@ -34,7 +34,11 @@ async function pg(): Promise<{
   try {
     if (!g.__saunterPg) {
       // Dynamic import so a missing `pg` / no DATABASE_URL never breaks build.
-      const { Pool } = await import("pg");
+      // `pg` is CommonJS: under a bundler the named export resolves, but under
+      // raw node/tsx (e.g. the seed script) only `default.Pool` exists, so the
+      // named binding would be undefined and `new Pool()` would throw.
+      const pgModule = await import("pg");
+      const Pool = pgModule.Pool ?? (pgModule.default as typeof pgModule).Pool;
       const pool = new Pool({
         connectionString: process.env.DATABASE_URL,
         max: 3,
