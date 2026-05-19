@@ -1,8 +1,26 @@
+import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { generateTour } from "@/lib/pipeline/generate";
 import { PipelineError } from "@/lib/pipeline/http";
 import type { Interest } from "@/lib/pipeline/overpass";
 import { checkRateLimit } from "@/lib/ratelimit";
+import { logEvent, type TourEvent } from "@/lib/pipeline/cache";
+import { log } from "@/lib/log";
+
+// One-way hash so analytics can count distinct visitors without ever storing
+// a raw IP. Salted with a per-deploy-stable value if present, else a constant
+// (still adequate: we only need within-dataset uniqueness, not reversibility).
+function hashIp(ip: string): string {
+  const salt = process.env.IP_HASH_SALT || "saunter";
+  return createHash("sha256").update(`${salt}:${ip}`).digest("hex").slice(0, 16);
+}
+
+// Fire-and-forget event write. logEvent is already best-effort/no-throw, but
+// wrap it so a rejected promise can never become an unhandled rejection and
+// never adds latency to the response path.
+function emit(e: TourEvent): void {
+  void logEvent(e).catch(() => {});
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,14 +82,34 @@ export async function POST(req: Request) {
     );
   }
 
+  const ipHash = hashIp(ip);
+  emit({ type: "generate_request", ipHash });
+
+  const startedAt = Date.now();
   try {
     const out = await generateTour({ location, duration, tags });
+    emit({
+      type: "generate_success",
+      citySlug: out.citySlug,
+      slug: out.slug,
+      ms: Date.now() - startedAt,
+      ipHash,
+    });
     return NextResponse.json(out);
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    emit({
+      type: "generate_error",
+      ms: Date.now() - startedAt,
+      error: message,
+      ipHash,
+    });
     if (e instanceof PipelineError) {
+      // Expected, user-facing (bad input / sparse area) — info, not error.
+      log.info("generate.rejected", { step: e.step, error: message });
       return NextResponse.json({ error: e.message }, { status: 422 });
     }
-    console.error("generate failed:", e);
+    log.error("generate.failed", { error: message });
     return NextResponse.json(
       { error: "Something went wrong building your walk. Try again." },
       { status: 500 }

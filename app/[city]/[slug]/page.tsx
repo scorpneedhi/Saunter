@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Tour } from "@/components/Tour";
 import { resolveTour } from "@/lib/pipeline/resolve";
+import { logEvent } from "@/lib/pipeline/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,13 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function TourPage({ params }: Params) {
   const { tour, route } = await resolveTour(params.slug);
+  // Best-effort view event. logEvent is no-throw/no-op without DATABASE_URL;
+  // the .catch guards the promise so a DB outage can never break the render.
+  void logEvent({
+    type: "tour_view",
+    citySlug: params.city,
+    slug: params.slug,
+  }).catch(() => {});
   return (
     <div className="screen-fade">
       <Tour tour={tour} route={route} />

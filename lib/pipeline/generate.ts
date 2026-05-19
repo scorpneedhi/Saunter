@@ -23,6 +23,7 @@ import { computeRoute } from "./route";
 import { enrich } from "./enrich";
 import { narrate, toneFor } from "./narrate";
 import { getByHash, save, type TourRecord } from "./cache";
+import { log } from "../log";
 
 export interface GenerateInput {
   location: string;
@@ -36,10 +37,25 @@ export interface GenerateOutput {
   slug: string; // `${tour-slug}-${id}` — the [slug] route param
 }
 
-// Contract seam — wraps each pipeline step. No-op today; Agent C (analytics)
-// fills in per-step timing + structured logging here without moving call sites.
+// Wraps each pipeline step: measures wall-clock ms and emits one structured
+// log line, then re-raises any error untouched. Purely observational — it
+// never changes the value, ordering, or failure behavior of `fn`. Timing is
+// log-only (not persisted); see docs/metrics.sql for why.
 async function withTiming<T>(step: string, fn: () => Promise<T>): Promise<T> {
-  return fn();
+  const start = Date.now();
+  try {
+    const result = await fn();
+    log.info("step.timing", { step, ms: Date.now() - start, ok: true });
+    return result;
+  } catch (e) {
+    log.warn("step.timing", {
+      step,
+      ms: Date.now() - start,
+      ok: false,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    throw e;
+  }
 }
 
 export async function generateTour(
