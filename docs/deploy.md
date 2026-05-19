@@ -19,14 +19,27 @@ No schema setup is needed here — see the note at the bottom.
 
 ## 3. Set environment variables in Vercel
 
-In **Project → Settings → Environment Variables**, add exactly **two** variables (Production scope, also Preview if you want previews to persist):
+In **Project → Settings → Environment Variables**, add the **two** core variables (Production scope, also Preview if you want previews to persist):
 
 | Variable | Value | Effect if missing |
 | --- | --- | --- |
 | `DATABASE_URL` | Neon pooled connection string from step 2 | App degrades to an in-memory `Map`; tours do **not** persist across requests/instances. Read in `lib/pipeline/cache.ts:33`. |
 | `GROQ_API_KEY` | Your Groq API key | Narration falls back to grounded Wikipedia copy (still functional, less rich). Read in `lib/pipeline/narrate.ts:79`. |
 
-These are the **only** environment variables Saunter uses. Nominatim, Overpass, OSRM, Wikipedia, and Wikimedia Commons are all public services that require **no API keys**.
+Nominatim, Overpass, OSRM, Wikipedia, and Wikimedia Commons are all public services that require **no API keys**.
+
+### Optional: map kill-switch
+
+| Variable | Value | Effect |
+| --- | --- | --- |
+| `NEXT_PUBLIC_USE_MAPLIBRE` | unset (default) | MapLibre GL JS (OpenFreeMap tiles) for tours with real coordinates; SVG paper map auto-fallback for coordinate-less tours. |
+| `NEXT_PUBLIC_USE_MAPLIBRE` | `0` | **Kill-switch:** forces the SVG paper map everywhere. Read in `components/Tour.tsx`. |
+
+**Rollback (map):** if the MapLibre/OpenFreeMap path misbehaves in production
+(tile host down, fidelity regression), set `NEXT_PUBLIC_USE_MAPLIBRE=0` and
+redeploy/restart — no code change. Permanent rollback is a one-line revert of
+the `MapComponent` selector in `components/Tour.tsx`. The SVG `PaperMap` and the
+Open Graph share image are unaffected either way.
 
 ## 4. Build and deploy
 
