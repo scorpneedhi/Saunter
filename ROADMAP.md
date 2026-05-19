@@ -48,6 +48,7 @@ Maps to PRD §12 days 5–7 and §13.
 - [ ] **MapLibre GL JS.** Swap the illustrated SVG paper map for MapLibre + a custom paper-style JSON, OpenFreeMap tiles (PRD §8.1 production target). Keep the SVG look as the visual reference; this is a fidelity-risk migration, sequenced after launch deliberately.
 - [ ] **Analytics + observability.** Use Postgres for tour/usage analytics (PRD §8.1); track the §10 launch-week metrics; structured pipeline logging + timing per step.
 - [ ] **No-Wikipedia-coverage polish.** Tune the OSM-only fallback blurbs (PRD §15) so coverage-thin neighborhoods still read well.
+- [ ] **Latinize non-English place names.** Nominatim returns localized display names for some areas, so tour titles and the landing grid render e.g. "북촌한옥마을 ДЕРЕВНЯ" / "谷中" instead of "Bukchon" / "Yanaka" (observed on the seeded prod tours). Prefer the OSM `name:en` tag, falling back to transliteration, during geocode. Cosmetic only — links/resolution already work (the city slug segment is non-functional; `resolveTour` keys off the trailing id).
 
 ## Later — Post-MVP (PRD §14, not committed)
 
