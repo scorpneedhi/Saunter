@@ -9,9 +9,8 @@
 //
 // Drop-in: accepts the same props as PaperMap. `route` (0..1 SVG space) and
 // `areas` are intentionally IGNORED — this map uses real geography. The route
-// is drawn as a polyline through the stops' real lat/lng (which are passed
-// today); see the limitation note in the worktream report re: threading the
-// true OSRM `tour.routeLngLat`.
+// is the true OSRM walking polyline (`routeLngLat`, [lng, lat] pairs); it
+// falls back to a straight line through the stops only if that is absent.
 //
 // SSR-safe: maplibre-gl is dynamically imported inside an effect, and the
 // server render returns an empty container (no window access at module load).
@@ -24,6 +23,7 @@ import { buildPaperStyle } from "./paperMapStyle";
 interface Props {
   stops: Stop[];
   route: RoutePoint[];
+  routeLngLat?: [number, number][]; // true OSRM walking polyline, [lng, lat]
   activeStop: number;
   onStopClick?: (n: number) => void;
   accent: string;
@@ -48,6 +48,7 @@ function geoStops(stops: Stop[]): { n: number; name: string; lng: number; lat: n
 
 export function MapLibreMap({
   stops,
+  routeLngLat,
   activeStop,
   onStopClick,
   accent,
@@ -76,28 +77,28 @@ export function MapLibreMap({
     [points]
   );
 
-  // Route: a polyline through the stops in order. This is a faithful-enough
-  // path for the calm field-guide map; the true OSRM polyline lives on
-  // tour.routeLngLat and is NOT threaded as a prop today (see report).
-  const routeGeoJSON = React.useMemo(
-    () => ({
+  // Route: the true OSRM walking polyline when available, else a straight
+  // line through the stops in order as a graceful fallback.
+  const routeGeoJSON = React.useMemo(() => {
+    const coords: [number, number][] | null =
+      routeLngLat && routeLngLat.length >= 2
+        ? routeLngLat
+        : points.length >= 2
+        ? points.map((p) => [p.lng, p.lat] as [number, number])
+        : null;
+    return {
       type: "FeatureCollection" as const,
-      features:
-        points.length >= 2
-          ? [
-              {
-                type: "Feature" as const,
-                geometry: {
-                  type: "LineString" as const,
-                  coordinates: points.map((p) => [p.lng, p.lat]),
-                },
-                properties: {},
-              },
-            ]
-          : [],
-    }),
-    [points]
-  );
+      features: coords
+        ? [
+            {
+              type: "Feature" as const,
+              geometry: { type: "LineString" as const, coordinates: coords },
+              properties: {},
+            },
+          ]
+        : [],
+    };
+  }, [routeLngLat, points]);
 
   // Init the map once (client only). maplibre-gl + its CSS are imported here
   // so nothing touches `window` during SSR / next build static analysis.

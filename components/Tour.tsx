@@ -16,8 +16,10 @@ import type { Tour as TourType, RoutePoint } from "@/lib/types";
 const ACCENT = "#2e4a32"; // deep forest
 
 // MapLibre is opt-in; the SVG PaperMap stays the default visual reference.
+// Per-tour selection happens in the component: MapLibre needs real
+// coordinates, so coordinate-less tours (the static mock) keep the SVG map
+// even with the flag on.
 const USE_MAPLIBRE = process.env.NEXT_PUBLIC_USE_MAPLIBRE === "1";
-const MapComponent = USE_MAPLIBRE ? MapLibreMap : PaperMap;
 
 // ── Speech narration engine ───────────────────────────────────────────────
 // SpeechSynthesis gives us no audio-duration API, so the time readout below
@@ -74,6 +76,12 @@ function chunkText(text: string): string[] {
 export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
   const router = useRouter();
   const routePts = tour.route ?? route;
+  // MapLibre only for tours with real geography; the static/mock tour has no
+  // stop lat/lng, so it falls back to the SVG PaperMap even when the flag is on.
+  const hasGeo = tour.stops.some(
+    (s) => typeof s.lat === "number" && typeof s.lng === "number"
+  );
+  const MapComponent = USE_MAPLIBRE && hasGeo ? MapLibreMap : PaperMap;
   const mapSubLabel = tour.center
     ? `${Math.abs(tour.center.lat).toFixed(4)}° ${tour.center.lat >= 0 ? "N" : "S"} · ${Math.abs(
         tour.center.lng
@@ -621,6 +629,7 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
             <MapComponent
               stops={tour.stops}
               route={routePts}
+              routeLngLat={tour.routeLngLat}
               activeStop={activeStop}
               onStopClick={handleStopClick}
               accent={ACCENT}
