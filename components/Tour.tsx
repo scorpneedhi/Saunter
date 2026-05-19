@@ -1,9 +1,11 @@
 "use client";
 
-// Tour page — the heart of the product.
-// Map fills the top on mobile (sticky), the stop list scrolls below,
-// a fixed transistor-radio audio bar sits at the bottom.
-// Drop cap on intro is locked on (the tweak the user landed on).
+// Tour page — mobile-first audio-walk minimal.
+// Layout: hero map (top) · tour head · intro blurb · stops list (rail + name +
+// image-slot + blurb) · outro · pinned audio dock at the bottom.
+//
+// The narration / speech-synthesis engine is preserved untouched from the
+// editorial build — only the JSX layout and styling have changed.
 
 import React from "react";
 import { useRouter } from "next/navigation";
@@ -13,13 +15,12 @@ import { StopPhoto } from "./StopPhoto";
 import { AudioBar } from "./AudioBar";
 import type { Tour as TourType, RoutePoint } from "@/lib/types";
 
-const ACCENT = "#2e4a32"; // deep forest
+const ACCENT = "#FF5C1A"; // trail-blaze orange
 
 // MapLibre is the production map for tours with real coordinates.
 // NEXT_PUBLIC_USE_MAPLIBRE=0 forces the SVG PaperMap — an instant kill-switch
 // (env flip + restart, no redeploy). Coordinate-less tours (the static mock)
-// always fall back to PaperMap via hasGeo regardless of the flag. PaperMap
-// stays the visual reference and powers the OG share image.
+// always fall back to PaperMap via hasGeo regardless of the flag.
 const FORCE_SVG = process.env.NEXT_PUBLIC_USE_MAPLIBRE === "0";
 
 // ── Speech narration engine ───────────────────────────────────────────────
@@ -78,8 +79,7 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
   const router = useRouter();
   const routePts = tour.route ?? route;
   // MapLibre needs real geography; the static/mock tour has no stop lat/lng,
-  // so it always falls back to the SVG PaperMap. With coordinates, MapLibre
-  // is the default unless the kill-switch (FORCE_SVG) is set.
+  // so it always falls back to the SVG PaperMap.
   const hasGeo = tour.stops.some(
     (s) => typeof s.lat === "number" && typeof s.lng === "number"
   );
@@ -97,21 +97,13 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
 
   // ── Render-phase-safe state updates for the speech engine ─────────────────
   // The narration engine pushes progress/activeStop/playing from rAF ticks,
-  // setTimeout, the keep-alive interval and SpeechSynthesisUtterance
-  // onboundary/onend/onerror handlers. Those callbacks outlive any single
-  // render: across a Fast Refresh in-place re-render (or a StrictMode /
-  // concurrent re-render), a still-live callback can fire its setter against
-  // the *previous* Tour fiber while a fresh Tour fiber is mid-render — React's
-  // "Cannot update a component (Tour) while rendering a different component
-  // (Tour)" warning. `engineAlive` drops updates once this instance is torn
-  // down; `renderingRef` defers an update by a microtask if it lands during
-  // the synchronous render phase. Both keep audio behavior identical (the
-  // deferral is sub-frame; speech calls are never gated, only React state).
+  // setTimeout, the keep-alive interval and SpeechSynthesisUtterance handlers.
+  // `engineAlive` drops updates once this instance is torn down; `renderingRef`
+  // defers an update by a microtask if it lands during the synchronous render
+  // phase, preventing the "Cannot update while rendering" warning.
   const engineAlive = React.useRef(true);
   const renderingRef = React.useRef(false);
   renderingRef.current = true;
-  // Flip the flag back the instant the synchronous render stack unwinds —
-  // before any rAF/timer/speech event for this frame can run.
   if (typeof queueMicrotask === "function") {
     queueMicrotask(() => {
       renderingRef.current = false;
@@ -138,13 +130,8 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
 
   const [shareToast, setShareToast] = React.useState(false);
   const stopRefs = React.useRef<Record<number, HTMLElement | null>>({});
-  const listRef = React.useRef<HTMLDivElement>(null);
-  const userScrolling = React.useRef(false);
 
   // ── Narration timeline ──────────────────────────────────────────────────
-  // Sequence: tour.intro → each stop.blurb in order → tour.outro.
-  // intro is folded onto the first stop and outro onto the last stop so the
-  // existing per-stop `activeStop` / `progress` model is preserved exactly.
   const segments = React.useMemo<Segment[]>(() => {
     const ordered = [...tour.stops].sort((a, b) => a.n - b.n);
     return ordered.map((s, i) => {
@@ -168,8 +155,6 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
     [tour.stops]
   );
 
-  // Per-stop estimated seconds — feeds ONLY the cosmetic globalSec/totalSec
-  // readout (SpeechSynthesis has no real duration API).
   const stopOffsets = React.useMemo(() => {
     const offs: number[] = [];
     let acc = 0;
@@ -180,15 +165,10 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
     return { offs, total: acc };
   }, [segments]);
 
-  // Mutable speech state lives in refs so the click handler can call
-  // speechSynthesis.speak() synchronously (mobile-Safari gesture rule) without
-  // waiting on React state/effects.
   const speakState = React.useRef({
-    // index into the *current* segment's chunk array
     chunkIdx: 0,
     chunks: [] as string[],
     segIdx: 0,
-    // total chars of the current segment, for onboundary progress math
     totalChars: 0,
     charsBefore: 0,
     gotBoundary: false,
@@ -198,14 +178,9 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
     fallbackStartProg: 0,
     cancelled: false,
     active: false,
-    // Chrome pauses the engine on long total speech even with chunking; a
-    // periodic pause()/resume() ping keeps the queue alive.
     keepAlive: 0 as number | ReturnType<typeof setInterval>,
   });
   const preferredVoice = React.useRef<SpeechSynthesisVoice | null>(null);
-  // Breaks the runFallbackClock ⇄ speakSegment dependency cycle (both are
-  // useCallbacks; the fallback clock needs to re-enter speakSegment when it
-  // rolls over to the next stop).
   const speakSegmentRef = React.useRef<(segIdx: number, fromProg: number) => void>(
     () => {}
   );
@@ -235,8 +210,6 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
     }
   }, []);
 
-  // Chrome workaround: ping pause()+resume() every ~10s while we have speech
-  // queued so the engine doesn't silently stall on long total narration.
   const startKeepAlive = React.useCallback(() => {
     const st = speakState.current;
     stopKeepAlive();
@@ -260,9 +233,6 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
     if (s) s.cancel();
   }, [clearFallback, stopKeepAlive]);
 
-  // Wall-clock fallback used when `onboundary` never fires (Safari) OR when
-  // SpeechSynthesis is entirely unavailable. Drives progress from
-  // elapsed ÷ estimatedSeconds and auto-advances stops the same way.
   const runFallbackClock = React.useCallback(
     (segIdx: number, fromProg: number) => {
       const st = speakState.current;
@@ -280,7 +250,6 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
           if (segIdx < segments.length - 1) {
             const next = segIdx + 1;
             setActiveStop(orderedStops[next].n);
-            // continue the chain in whatever mode this stop ends up using
             speakSegmentRef.current(next, 0);
           } else {
             setPlaying(false);
@@ -294,11 +263,10 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
       };
       st.fallbackRaf = requestAnimationFrame(tick);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [segments, orderedStops, clearFallback, stopKeepAlive]
   );
 
-  // Speak segment `segIdx`, starting `fromProg` (0..1) of the way through it.
-  // The first speak() in any user gesture reaches this synchronously.
   const speakSegment = React.useCallback(
     (segIdx: number, fromProg: number) => {
       const st = speakState.current;
@@ -308,7 +276,6 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
         return;
       }
       const s = synth();
-      // No SpeechSynthesis at all → pure wall-clock so the UI is never dead.
       if (!s) {
         st.cancelled = false;
         st.active = true;
@@ -317,11 +284,10 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
         return;
       }
 
-      s.cancel(); // clear anything queued before we re-speak
+      s.cancel();
       startKeepAlive();
       const chunks = chunkText(seg.text);
       const totalChars = chunks.join(" ").length || 1;
-      // Where to resume from, at chunk granularity.
       const startChar = Math.floor(fromProg * totalChars);
       let acc = 0;
       let startChunk = 0;
@@ -345,7 +311,6 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
       const speakChunk = (idx: number) => {
         if (st.cancelled) return;
         if (idx >= st.chunks.length) {
-          // Segment finished → advance to next stop or stop playback.
           clearFallback();
           if (segIdx < segments.length - 1) {
             const next = segIdx + 1;
@@ -373,7 +338,7 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
         u.onboundary = (ev: SpeechSynthesisEvent) => {
           if (st.cancelled) return;
           st.gotBoundary = true;
-          clearFallback(); // boundary works → kill any wall-clock fallback
+          clearFallback();
           const ci = st.charsBefore + (ev.charIndex || 0);
           setProgress(Math.min(0.999, ci / st.totalChars));
         };
@@ -383,7 +348,6 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
         };
         u.onerror = () => {
           if (st.cancelled) return;
-          // engine hiccup — fall back to the clock for the rest of this stop
           if (!st.gotBoundary) {
             runFallbackClock(segIdx, st.charsBefore / st.totalChars);
           } else {
@@ -398,10 +362,6 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
           return;
         }
 
-        // Arm the no-boundary fallback only on the very first chunk: if no
-        // onboundary has fired shortly after speech starts (Safari), advance
-        // the bar by wall clock instead. Speech keeps playing; we just stop
-        // relying on boundary events for the scrubber.
         if (idx === startChunk) {
           clearFallback();
           st.boundaryTimer = setTimeout(() => {
@@ -413,6 +373,7 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
 
       speakChunk(startChunk);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       segments,
       orderedStops,
@@ -423,14 +384,10 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
     ]
   );
 
-  // Keep the indirection ref pointed at the live speakSegment so the
-  // fallback-clock rollover and segment-finished paths re-enter correctly.
   React.useEffect(() => {
     speakSegmentRef.current = speakSegment;
   }, [speakSegment]);
 
-  // Load voices without blocking playback. Picks a preferred en voice when
-  // the list arrives; playback never waits on this.
   React.useEffect(() => {
     const s = synth();
     if (!s) return;
@@ -449,17 +406,12 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
     return () => s.removeEventListener?.("voiceschanged", pick);
   }, []);
 
-  // Cleanup on unmount: never leave the synth talking after navigation.
   React.useEffect(() => {
     return () => {
       hardStop();
     };
   }, [hardStop]);
 
-  // Lifecycle gate for engine→state updates. Tied to mount/unmount only (not
-  // hardStop identity) so a torn-down or Fast-Refresh-replaced instance can't
-  // setState from a still-live rAF/timer/utterance callback. Re-arms on a
-  // StrictMode remount.
   React.useEffect(() => {
     engineAlive.current = true;
     return () => {
@@ -467,9 +419,6 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
     };
   }, []);
 
-  // Toggle play/pause. CRITICAL: when starting, speechSynthesis.speak() is
-  // reached synchronously inside this handler (the click event) — no await,
-  // no deferred effect — to satisfy the mobile-Safari user-gesture rule.
   const handleToggle = React.useCallback(() => {
     if (playing) {
       setPlaying(false);
@@ -480,32 +429,32 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
     const segIdx = orderedStops.findIndex((s) => s.n === activeStop);
     speakState.current.cancelled = false;
     speakSegment(Math.max(0, segIdx), progress);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, activeStop, progress, orderedStops, speakSegment, hardStop]);
 
-  // When the active stop changes, scroll its card into view.
+  // When the active stop changes, smoothly scroll the page so the active card
+  // is comfortably in view. (We use document scroll on mobile rather than an
+  // inner-scroller, because the page itself scrolls.)
   React.useEffect(() => {
     const el = stopRefs.current[activeStop];
-    if (!el || !listRef.current) return;
-    if (userScrolling.current) return;
-    const listRect = listRef.current.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    const targetTop = listRef.current.scrollTop + (elRect.top - listRect.top) - 96;
-    listRef.current.scrollTo({ top: targetTop, behavior: "smooth" });
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.top < 96 || r.bottom > window.innerHeight - 140) {
+      const y = window.scrollY + r.top - 100;
+      window.scrollTo({ top: y, behavior: "smooth" });
+    }
   }, [activeStop]);
 
   const handleStopClick = (n: number) => {
     setActiveStop(n);
     setProgress(0);
     if (playing) {
-      // Re-target narration to the clicked stop. cancel() happens inside
-      // speakSegment before the new utterance, per the cleanup contract.
       const segIdx = orderedStops.findIndex((s) => s.n === n);
       speakState.current.cancelled = false;
       speakSegment(Math.max(0, segIdx), 0);
     }
   };
 
-  // Jump to next/prev stop, restarting narration there if playing.
   const handlePrev = () => {
     const segIdx = orderedStops.findIndex((s) => s.n === activeStop);
     const target = Math.max(0, segIdx - 1);
@@ -531,9 +480,6 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
     }
   };
 
-  // onSeek(p): p is 0..1 over the WHOLE tour timeline. Map it onto the
-  // estimated-seconds layout to find the stop, jump activeStop there, and
-  // (if playing) resume speaking from that stop's start.
   const handleSeek = (p: number) => {
     const clamped = Math.max(0, Math.min(1, p));
     const targetSec = clamped * stopOffsets.total;
@@ -567,13 +513,10 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
       navigator.clipboard.writeText(window.location.href).catch(() => {});
     }
     setShareToast(true);
-    setTimeout(() => setShareToast(false), 2000);
+    setTimeout(() => setShareToast(false), 1800);
   };
 
   const current = tour.stops.find((s) => s.n === activeStop);
-  // NOTE: SpeechSynthesis has no duration API — totalSec/globalSec are a
-  // synthetic estimate (word count ÷ ~2.7 wps) purely for the mm:ss readout.
-  // The scrubber FILL is driven by real onboundary `progress`, not the clock.
   const activeSegIdx = orderedStops.findIndex((s) => s.n === activeStop);
   const totalSec = stopOffsets.total;
   const globalSec =
@@ -587,120 +530,83 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
 
   return (
     <div className="screen tour">
-      <header className="tour-mast">
-        <button className="tour-back" onClick={() => router.push("/")}>
-          <span aria-hidden="true">←</span> Saunter
+      {/* HERO MAP */}
+      <div className="tour-map-hero">
+        <button
+          className="map-back"
+          onClick={() => router.push("/")}
+          aria-label="Back"
+        >
+          ←
         </button>
-        <div className="tour-mast-center"></div>
-        <div className="tour-mast-r">
-          <button className="tour-share" onClick={handleShare}>
-            Share this walk
-          </button>
-          {shareToast && (
-            <span className="tour-toast">Link copied · saunter.app/echo-park/…</span>
-          )}
+        <button className="map-share" onClick={handleShare}>
+          Share walk
+        </button>
+        {shareToast && <div className="map-toast">Link copied</div>}
+        <MapComponent
+          stops={tour.stops}
+          route={routePts}
+          routeLngLat={tour.routeLngLat}
+          activeStop={activeStop}
+          onStopClick={handleStopClick}
+          accent={ACCENT}
+          areas={tour.areas}
+          label={tour.city}
+          subLabel={mapSubLabel}
+        />
+      </div>
+
+      {/* TOUR HEAD */}
+      <header className="tour-head">
+        <div className="eyebrow">{tour.duration}-min walk</div>
+        <h1>
+          {tour.city}
+          <br />
+          <span className="region">{tour.region}</span>
+        </h1>
+        <div className="tour-meta-row">
+          <span>
+            <span className="v">{tour.distanceMi}</span> mi
+          </span>
+          <span className="dot" />
+          <span>
+            <span className="v">{tour.stops_count}</span> stops
+          </span>
+          <span className="dot" />
+          <span>{tour.tags.join(" · ")}</span>
         </div>
       </header>
+      <p className="tour-blurb">{tour.intro}</p>
 
-      <div className="tour-body">
-        {/* LEFT: stop list */}
-        <div className="tour-list" ref={listRef}>
-          <div className="tour-intro">
-            <p className="overline">
-              <span>A {tour.duration}-minute walk through</span>
-            </p>
-            <h1 className="tour-title">
-              <em>{tour.city}</em>
-            </h1>
-            <p className="tour-sub">
-              {tour.region} · {tour.tags.join(" + ")}
-            </p>
-
-            <div className="tour-meta-strip">
-              <span>
-                <span className="meta-num">{tour.distanceMi}</span> mi ·{" "}
-                <span className="meta-num">{tour.distanceKm}</span> km
-              </span>
-              <span className="rule-short" />
-              <span>
-                ~<span className="meta-num">{tour.duration}</span> min on foot
-              </span>
-              <span className="rule-short" />
-              <span>
-                <span className="meta-num">{tour.stops_count}</span> stops
-              </span>
+      {/* STOPS */}
+      <div className="tour-stops">
+        {tour.stops.map((s) => (
+          <article
+            key={s.n}
+            ref={(el) => {
+              stopRefs.current[s.n] = el;
+            }}
+            className={`stop ${activeStop === s.n ? "active" : ""}`}
+            onClick={() => handleStopClick(s.n)}
+          >
+            <div className="stop-rail">
+              <div className="stop-num">{s.n}</div>
+              <div className="stop-line" />
+              <div className="stop-walk">+{s.walkMin}m</div>
             </div>
-
-            <p className="tour-blurb">
-              <span className="dropcap">{tour.intro[0]}</span>
-              {tour.intro.slice(1)}
-            </p>
-          </div>
-
-          <div className="tour-stops">
-            {tour.stops.map((s) => (
-              <article
-                key={s.n}
-                ref={(el) => {
-                  stopRefs.current[s.n] = el;
-                }}
-                className={`stop ${activeStop === s.n ? "active" : ""}`}
-                onClick={() => handleStopClick(s.n)}
-              >
-                <div className="stop-num">
-                  <span className="stop-num-glyph">{s.n}</span>
-                  <span className="stop-num-line" />
-                  <span className="stop-num-walk">
-                    +{s.walkMin}
-                    <small>min</small>
-                  </span>
-                </div>
-
-                <div className="stop-body">
-                  <p className="stop-type">{s.type}</p>
-                  <h2 className="stop-name">{s.name}</h2>
-                  <div className="stop-photo-row">
-                    <StopPhoto tone={s.photoTone} n={s.n} />
-                  </div>
-                  <p className="stop-blurb">{s.blurb}</p>
-                </div>
-              </article>
-            ))}
-
-            <div className="tour-outro">
-              <div className="ornament">
-                <span className="orn-rule" />
-                <span className="orn-glyph">✦</span>
-                <span className="orn-rule" />
-              </div>
-              <p className="tour-outro-body">{tour.outro}</p>
+            <div className="stop-body">
+              <div className="stop-type">{s.type}</div>
+              <h2 className="stop-name">{s.name}</h2>
+              <StopPhoto name={s.name} photoUrl={s.photoUrl} />
+              <p className="stop-blurb">{s.blurb}</p>
             </div>
-          </div>
-        </div>
+          </article>
+        ))}
+      </div>
 
-        {/* RIGHT: sticky map */}
-        <div className="tour-map">
-          <div className="tour-map-inner">
-            <MapComponent
-              stops={tour.stops}
-              route={routePts}
-              routeLngLat={tour.routeLngLat}
-              activeStop={activeStop}
-              onStopClick={handleStopClick}
-              accent={ACCENT}
-              areas={tour.areas}
-              label={tour.city}
-              subLabel={mapSubLabel}
-            />
-            <div className="map-overlay-br">
-              <p className="overline ink">
-                Stop {String(activeStop).padStart(2, "0")} /{" "}
-                {String(tour.stops.length).padStart(2, "0")}
-              </p>
-              <p className="map-overlay-now">{current && current.name}</p>
-            </div>
-          </div>
-        </div>
+      <div className="tour-outro">
+        <span className="label">End of walk</span>
+        <p>{tour.outro}</p>
       </div>
 
       <AudioBar
@@ -711,6 +617,7 @@ export function Tour({ tour, route }: { tour: TourType; route: RoutePoint[] }) {
         totalSec={totalSec}
         fmtTime={fmtTime}
         accent={ACCENT}
+        totalStops={tour.stops.length}
         onSeek={handleSeek}
         onPrev={handlePrev}
         onNext={handleNext}
