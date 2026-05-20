@@ -3,6 +3,17 @@
 
 import { haversine, type LatLng } from "./geo";
 import type { Candidate } from "./overpass";
+import type { Enriched } from "./enrich";
+
+// PRD floor — never ship a tour with fewer than this many stops.
+const MIN_STOPS = 4;
+// Oversample at selection time so finalizeStops() has room to prune
+// stops whose Wikipedia article turns out to be empty or trivial.
+const OVERSAMPLE = 2;
+// A stop counts as "content-rich" if its Wikipedia extract has at least
+// this many characters (~40 words). Below it, the prose has nothing to
+// lean on unless the OSM tags carry concrete facts.
+const RICH_EXTRACT_CHARS = 200;
 
 // "Substantial" place types are worth more than a coffee shop.
 const TYPE_WEIGHT: Record<string, number> = {
@@ -23,7 +34,11 @@ const TYPE_WEIGHT: Record<string, number> = {
 
 function score(c: Candidate): number {
   let s = 1;
-  if (c.hasWiki) s += 4; // OSM completeness — Wikipedia-tagged ranks higher
+  // Wikipedia-tagged OSM places rank decisively higher: a +6 bonus puts a
+  // Wikipedia-tagged Building (1.5 + 6 = 7.5) clearly ahead of an untagged
+  // Museum (4). Sparse areas otherwise pad the walk with anonymous stops
+  // whose prose has nothing to ground itself in.
+  if (c.hasWiki) s += 6;
   s += c.interests.length * 1.5; // matches more of what they asked for
   s += TYPE_WEIGHT[c.typeLabel] ?? 1;
   return s;
@@ -31,7 +46,7 @@ function score(c: Candidate): number {
 
 // Stop count tuned by duration and density (PRD §15 default: pace-based,
 // count by density). 5–10 stops.
-function targetCount(durationMin: number, available: number): number {
+export function targetCount(durationMin: number, available: number): number {
   const byTime = Math.round(durationMin / 14); // ~14 min per stop incl. walking
   return Math.max(5, Math.min(10, Math.min(byTime, available)));
 }
@@ -45,11 +60,16 @@ export function selectStops(
     .map((c) => ({ c, s: score(c) }))
     .sort((a, b) => b.s - a.s);
 
-  const want = targetCount(durationMin, scored.length);
+  const finalWant = targetCount(durationMin, scored.length);
+  // Oversample so the post-enrichment finalize step can prune stops with
+  // empty Wikipedia extracts. Capped by the total candidate pool.
+  const want = Math.min(scored.length, finalWant + OVERSAMPLE);
 
   // No single type may exceed ~40% of the final set, but always allow at
-  // least 2 (so a 5-stop walk tolerates 2 of a type, not 1).
-  const typeCap = Math.max(2, Math.ceil(want * 0.4));
+  // least 2 (so a 5-stop walk tolerates 2 of a type, not 1). Type cap is
+  // sized to the final target, not the oversampled pool, so finalize still
+  // sees diversity once the thin stops are pruned.
+  const typeCap = Math.max(2, Math.ceil(finalWant * 0.4));
   const typeCounts = new Map<string, number>();
   const bump = (c: Candidate) =>
     typeCounts.set(c.typeLabel, (typeCounts.get(c.typeLabel) ?? 0) + 1);
@@ -95,6 +115,63 @@ export function selectStops(
   }
 
   return orderForWalking(chosen, center);
+}
+
+// A stop "earns its place" once enriched if either its Wikipedia article
+// has real substance or its OSM tags carry concrete narratable facts.
+// Otherwise the prose has nothing to ground in and gets padded by the LLM
+// ("its details waiting to be appreciated") — exactly the failure mode the
+// architecture is meant to prevent.
+function hasNarratableContent(e: Enriched): boolean {
+  if (e.extract && e.extract.length >= RICH_EXTRACT_CHARS) return true;
+  const o = e.osm;
+  if (!o) return false;
+  return Boolean(
+    o.description ||
+      o.architect ||
+      o.start_date ||
+      o.inscription ||
+      o.historic ||
+      o.heritage
+  );
+}
+
+// Step 5b — after Wikipedia enrichment, drop stops with no real source
+// material if doing so still leaves at least MIN_STOPS. Better to ship a
+// 4-stop walk grounded in actual content than a 5-stop walk with two
+// generic filler entries. Re-orders survivors via orderForWalking().
+export function finalizeStops(
+  enriched: Enriched[],
+  durationMin: number,
+  center: LatLng
+): Enriched[] {
+  if (enriched.length <= MIN_STOPS) return orderEnriched(enriched, center);
+
+  const want = targetCount(durationMin, enriched.length);
+  const rich: Enriched[] = [];
+  const thin: Enriched[] = [];
+  for (const e of enriched) {
+    (hasNarratableContent(e) ? rich : thin).push(e);
+  }
+
+  // Take rich stops up to the target; only refill from thin if there
+  // weren't enough rich stops to hit the PRD floor / target. enriched
+  // arrives in selectStops' score-then-spread-then-coverage order, so
+  // rich.slice(0, target) keeps the strongest.
+  const target = Math.max(MIN_STOPS, Math.min(want, enriched.length));
+  const kept: Enriched[] = rich.slice(0, target);
+  for (const e of thin) {
+    if (kept.length >= target) break;
+    kept.push(e);
+  }
+
+  return orderEnriched(kept, center);
+}
+
+function orderEnriched(stops: Enriched[], center: LatLng): Enriched[] {
+  // orderForWalking only reads {lat, lng}, which Enriched extends, so a
+  // narrow cast is safe here.
+  return orderForWalking(stops as unknown as Candidate[], center) as unknown as Enriched[];
 }
 
 // Nearest-neighbour ordering starting from the stop closest to the user's

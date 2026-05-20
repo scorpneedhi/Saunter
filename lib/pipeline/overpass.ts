@@ -3,6 +3,7 @@
 // map is grounded in real geography rather than decoration.
 
 import { postOverpass, PipelineError } from "./http";
+import { latinize } from "./geocode";
 import type { LatLng } from "./geo";
 
 export type Interest =
@@ -204,8 +205,13 @@ out geom 40;
 
     const lat = el.lat ?? el.center?.lat;
     const lng = el.lon ?? el.center?.lon;
-    const name = tags.name || tags["name:en"] || tags.artist_name;
-    if (lat == null || lng == null || !name) continue;
+    // Prefer the OSM English variant; fall back to the localized name or
+    // artist name. Latinize whichever wins so stops never render as e.g.
+    // "북촌한옥마을 ДЕРЕВНЯ" — the namedetails shim re-uses any name:en /
+    // name:en-US already on the element when the chosen string is non-Latin.
+    const rawName = tags["name:en"] || tags.name || tags.artist_name;
+    if (lat == null || lng == null || !rawName) continue;
+    const name = latinize(rawName, tags);
 
     const key = `${name.toLowerCase()}@${lat.toFixed(4)},${lng.toFixed(4)}`;
     if (seen.has(key)) continue;

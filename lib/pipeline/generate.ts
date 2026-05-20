@@ -18,7 +18,7 @@ import {
 import { PipelineError } from "./http";
 import { geocode } from "./geocode";
 import { fetchCandidates, type Interest } from "./overpass";
-import { selectStops } from "./rank";
+import { selectStops, finalizeStops } from "./rank";
 import { computeRoute } from "./route";
 import { enrich } from "./enrich";
 import { narrate, toneFor } from "./narrate";
@@ -87,7 +87,9 @@ export async function generateTour(
     fetchCandidates(center, radius, tags)
   );
 
-  // 3. Score, select, order (deterministic — not the LLM)
+  // 3. Score, select, order (deterministic — not the LLM). Oversamples
+  // by a couple of stops so the post-enrichment finalize step can prune
+  // entries whose Wikipedia article turns out to be empty.
   const selected = await withTiming("select", async () =>
     selectStops(candidates, center, input.duration)
   );
@@ -98,15 +100,29 @@ export async function generateTour(
     );
   }
 
-  // 4. Pedestrian route through the ordered stops
+  // 4. Wikipedia summary + Commons image per stop. We enrich before
+  // routing because the route should trace the final stop set, not the
+  // oversampled one.
+  const enrichedAll = await withTiming("enrich", () => enrich(selected));
+
+  // 5. Content-aware finalize: drop stops with empty Wikipedia extracts
+  // and no narratable OSM facts, provided we still meet the PRD floor.
+  const enriched = await withTiming("finalize", async () =>
+    finalizeStops(enrichedAll, input.duration, center)
+  );
+  if (enriched.length < 4) {
+    throw new PipelineError(
+      "select",
+      "Not enough notable places here for a walk. Try a denser area."
+    );
+  }
+
+  // 6. Pedestrian route through the final ordered stops
   const route = await withTiming("route", () =>
-    computeRoute(selected.map((s) => ({ lat: s.lat, lng: s.lng })))
+    computeRoute(enriched.map((s) => ({ lat: s.lat, lng: s.lng })))
   );
 
-  // 5. Wikipedia summary + Commons image per stop
-  const enriched = await withTiming("enrich", () => enrich(selected));
-
-  // 6. Narration grounded in the retrieved text (LLM or fallback)
+  // 7. Narration grounded in the retrieved text (LLM or fallback)
   const narration = await withTiming("narrate", () =>
     narrate(enriched, geo.city, geo.region, tags, input.duration)
   );

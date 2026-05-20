@@ -75,7 +75,8 @@ export async function geocode(query: string): Promise<GeocodeResult> {
 
 // Nominatim sometimes returns localized names even with accept-language=en
 // (e.g. 谷中, 북촌한옥마을). Prefer the OSM name:en tag, otherwise transliterate.
-function latinize(raw: string, namedetails?: Record<string, string>): string {
+// Exported so the Overpass step can latinize per-stop names the same way.
+export function latinize(raw: string, namedetails?: Record<string, string>): string {
   const en = namedetails?.["name:en"] || namedetails?.["name:en-US"];
   if (en) return en;
   if (/^[\p{Script=Latin}\s\d\p{P}]+$/u.test(raw)) return raw;
