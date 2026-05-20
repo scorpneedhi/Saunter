@@ -91,31 +91,6 @@ function bareCloser(typeLabel: string, name: string): string {
   return variants[Math.abs(h) % variants.length];
 }
 
-// Flatten the retained OSM tags into an explicit, model-readable facts line
-// for the LLM no-source branch. Only present keys are emitted, so the strict
-// no-fabrication system prompt has concrete material to ground a short note
-// in. Falls back to the type label alone when nothing was retained.
-function osmFactsLine(e: Enriched): string {
-  const osm = e.osm ?? {};
-  const facts: string[] = [`type=${e.typeLabel}`];
-  const add = (k: string, v?: string) => {
-    const t = v?.replace(/\s+/g, " ").trim();
-    if (t) facts.push(`${k}=${t}`);
-  };
-  add("description", osm.description);
-  add("built", osm.start_date);
-  add("architect", osm.architect);
-  add("street", osm.street);
-  add("inscription", osm.inscription);
-  add("building", osm.building);
-  add("tourism", osm.tourism);
-  add("religion", osm.religion);
-  add("operator", osm.operator);
-  add("historic", osm.historic);
-  add("heritage", osm.heritage);
-  return `[no Wikipedia article] OSM FACTS: ${facts.join("; ")}`;
-}
-
 // Compose a varied, fact-grounded note for stops with no Wikipedia extract.
 // Branches on which OSM tags exist and varies sentence shape so consecutive
 // thin stops never read identically. Never asserts a fact not in the tags.
@@ -196,6 +171,17 @@ interface GroqResp {
   choices: { message: { content: string } }[];
 }
 
+// A stop is "rich" enough to hand to the LLM only when its Wikipedia
+// extract has real substance. Below this, the model has nothing to write
+// from and pads with hedge prose ("its architectural details and community
+// significance waiting to be appreciated") — exactly what the deterministic
+// fallbackBlurb is built to avoid.
+const RICH_EXTRACT_CHARS = 200;
+
+function isRich(e: Enriched): boolean {
+  return !!e.extract && e.extract.length >= RICH_EXTRACT_CHARS;
+}
+
 export async function narrate(
   stops: Enriched[],
   city: string,
@@ -206,29 +192,51 @@ export async function narrate(
   const key = process.env.GROQ_API_KEY;
   if (!key) return fallbackNarration(stops, city, region, tags);
 
-  const sources = stops
-    .map((s, i) => {
-      const source = s.extract
-        ? s.extract.slice(0, 900)
-        : osmFactsLine(s);
-      return `STOP ${i + 1}: ${s.name} (${s.typeLabel})\nSOURCE: ${source}`;
+  // Partition: only rich stops are handed to the LLM. Thin stops always
+  // get the OSM-grounded deterministic blurb so the prose stays honest
+  // about what's actually known.
+  const richIdx: number[] = [];
+  const thinIdx: number[] = [];
+  stops.forEach((s, i) => (isRich(s) ? richIdx : thinIdx).push(i));
+
+  // If nothing is rich, there's no model voice to apply — go straight to
+  // the deterministic narration so we don't burn a Groq call to produce
+  // intro/outro padding over a tour with no source material at all.
+  if (richIdx.length === 0) return fallbackNarration(stops, city, region, tags);
+
+  const richSources = richIdx
+    .map((i) => {
+      const s = stops[i];
+      return `STOP ${i + 1} (${s.name}, ${s.typeLabel})\nSOURCE: ${s.extract.slice(0, 900)}`;
     })
     .join("\n\n");
+
+  // Give the model the full ordered list of stop names/types so the intro
+  // and outro can land the whole walk, even when some stops are thin and
+  // won't get an LLM blurb.
+  const stopList = stops
+    .map((s, i) => `${i + 1}. ${s.name} (${s.typeLabel})`)
+    .join("\n");
+
+  const richIndexList = richIdx.map((i) => i + 1).join(", ");
 
   const system =
     "You are a literary travel writer in the register of Monocle or Cereal magazine: " +
     "observational, dry, precise, never breathless. You write walking-tour narration " +
     "GROUNDED STRICTLY in the provided SOURCE text. Do not invent facts, dates, names, " +
-    "or anecdotes. If a stop has no source, write a short, honest, descriptive note and " +
-    "do not fabricate history. Return ONLY valid JSON.";
+    "or anecdotes. Do not pad: if the source is brief, the blurb is brief. " +
+    "Return ONLY valid JSON.";
 
   const user =
     `City: ${city}, ${region}. Interests: ${tags.join(", ")}. Duration: ${durationMin} min.\n\n` +
-    `${sources}\n\n` +
-    `Return JSON: {"intro": string (~55 words, second person, sets the walk up), ` +
-    `"outro": string (~40 words, lands the walk at the final stop), ` +
-    `"blurbs": string[] (one per stop in order, 60-90 words each, evocative but ` +
-    `strictly grounded in that stop's SOURCE)}. No markdown, no extra keys.`;
+    `Stops in walking order:\n${stopList}\n\n` +
+    `SOURCES (only for stops ${richIndexList}):\n\n${richSources}\n\n` +
+    `Return JSON with this exact shape: {"intro": string (~55 words, second person, sets ` +
+    `the walk up), "outro": string (~40 words, lands the walk at the final stop), ` +
+    `"blurbs": { "${richIdx[0] + 1}": string, ... } — an object keyed by stop number, ` +
+    `one entry for EACH of stops ${richIndexList} and NO others, each blurb up to ~90 ` +
+    `words (fewer is fine — do not pad when the source is sparse), strictly grounded in ` +
+    `that stop's SOURCE}. No markdown, no extra keys.`;
 
   try {
     const data = await postJSON<GroqResp>(
@@ -248,17 +256,30 @@ export async function narrate(
     const parsed = JSON.parse(data.choices[0].message.content) as {
       intro: string;
       outro: string;
-      blurbs: string[];
+      blurbs: Record<string, string>;
     };
     if (
       !parsed.intro ||
       !parsed.outro ||
-      !Array.isArray(parsed.blurbs) ||
-      parsed.blurbs.length !== stops.length
+      !parsed.blurbs ||
+      typeof parsed.blurbs !== "object"
     ) {
       throw new Error("LLM returned malformed narration");
     }
-    return { ...parsed, narrated: true };
+
+    // Splice: LLM blurbs for rich stops (by 1-indexed stop number),
+    // deterministic blurbs for thin ones. If the LLM omits a rich stop,
+    // fall back to its extract trimmed — never leave a slot empty.
+    const blurbs: string[] = stops.map((s, i) => {
+      if (isRich(s)) {
+        const fromLLM = parsed.blurbs[String(i + 1)];
+        if (fromLLM && fromLLM.trim()) return fromLLM.trim();
+        return trimWords(s.extract, 85);
+      }
+      return fallbackBlurb(s, city);
+    });
+
+    return { intro: parsed.intro, outro: parsed.outro, blurbs, narrated: true };
   } catch {
     // Any LLM failure → grounded fallback rather than a broken tour.
     return fallbackNarration(stops, city, region, tags);
