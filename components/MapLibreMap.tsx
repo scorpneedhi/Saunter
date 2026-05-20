@@ -36,7 +36,9 @@ interface Props {
 
 const STOPS_SOURCE = "saunter-stops";
 const ROUTE_SOURCE = "saunter-route";
-const PAPER = "#f4ede0"; // --paper, for marker halos
+// White halo around markers — MapLibre paint values can't reference CSS vars,
+// so this is hard-coded to match the new --surface (#FFFFFF) marker style.
+const PAPER = "#FFFFFF";
 
 // Stops carrying real geography. The pipeline populates lat/lng; the static
 // mock does not (those tours should keep using the SVG map).
@@ -134,10 +136,9 @@ export function MapLibreMap({
         new maplibregl.AttributionControl({ compact: true }),
         "bottom-right"
       );
-      map.addControl(
-        new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }),
-        "top-right"
-      );
+      // No +/- zoom buttons: the design has none, and they collide with the
+      // floating "Share walk" pill. Touch pinch-zoom and scroll-wheel zoom
+      // still work via MapLibre's default gestures.
 
       map.on("load", () => {
         if (cancelled) return;

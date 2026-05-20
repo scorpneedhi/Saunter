@@ -67,6 +67,4 @@ export interface ExampleTour {
   region: string;
   min: number;
   tags: string;
-  tone: "ochre" | "terra" | "ink" | "rose" | "sage" | "brick" | "stone";
-  span: "wide" | "tall";
 }

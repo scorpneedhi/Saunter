@@ -1,11 +1,11 @@
-// Landing — magazine masthead, dropcap'd hero, editorial postcard grid, colophon.
-// Presentational; reads from typed data, navigates via App Router links.
+// Landing — wordmark, hero, clean walk-row list, single colophon line.
+// Audio-walk minimal: no masthead pill, no postcards, no dropcap, no ornaments.
 
 import Link from "next/link";
-import { Postcard } from "./Postcard";
 import { ECHO_PARK_TOUR, EXAMPLE_TOURS } from "@/lib/data";
 import { listTours } from "@/lib/pipeline/cache";
 import type { ExampleTour } from "@/lib/types";
+import { EditionToggle } from "@/components/EditionToggle";
 
 const slugify = (s: string) =>
   s
@@ -13,136 +13,102 @@ const slugify = (s: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 
-const tourHref = (t: ExampleTour) => `/${slugify(t.city)}/${ECHO_PARK_TOUR.slug}`;
+const fallbackHref = (t: ExampleTour) => `/${slugify(t.city)}/${ECHO_PARK_TOUR.slug}`;
 
-type Tone = ExampleTour["tone"];
-type Span = ExampleTour["span"];
-
-const TONES: Tone[] = ["ochre", "terra", "ink", "rose", "sage", "brick", "stone"];
-const SPANS: Span[] = ["wide", "tall"];
-
-interface PostcardCard {
+interface WalkRow {
   key: string;
   href: string;
-  n: string;
-  min: number;
   city: string;
   region: string;
   tags: string;
-  tone: Tone;
-  span: Span;
+  min: number;
 }
 
 export async function Landing() {
   const tours = await listTours(9);
 
-  const cards: PostcardCard[] =
+  const rows: WalkRow[] =
     tours.length > 0
-      ? tours.map((tour, i) => ({
+      ? tours.map((tour) => ({
           key: tour.slug,
           href: `/${slugify(tour.city) || "walk"}/${tour.slug}`,
-          n: String(i + 1).padStart(2, "0"),
-          min: tour.duration,
           city: tour.city,
           region: tour.region,
           tags: tour.tags.join(", "),
-          tone: TONES[i % TONES.length],
-          span: SPANS[i % SPANS.length],
+          min: tour.duration,
         }))
       : EXAMPLE_TOURS.map((t) => ({
           key: t.n,
-          href: tourHref(t),
-          n: t.n,
-          min: t.min,
+          href: fallbackHref(t),
           city: t.city,
           region: t.region,
           tags: t.tags,
-          tone: t.tone,
-          span: t.span,
+          min: t.min,
         }));
+
+  // "9 of N" — show a real count when the cache has tours; otherwise it's the
+  // 9 seeded examples and the denominator just matches.
+  const total = tours.length > 0 ? Math.max(tours.length, rows.length) : rows.length;
 
   return (
     <div className="screen landing">
-      <header className="masthead">
-        <div className="masthead-l">
-          <div className="logo">
-            <span className="logo-mark" aria-hidden="true">
-              <svg viewBox="0 0 32 32" width="22" height="22">
-                <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" strokeWidth="1.4" />
-                <path
-                  d="M9 22 Q 13 12, 17 18 T 24 11"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinecap="round"
-                />
-                <circle cx="9" cy="22" r="1.4" fill="currentColor" />
-                <circle cx="24" cy="11" r="1.4" fill="currentColor" />
-              </svg>
-            </span>
-            <span className="logo-word">Saunter</span>
-          </div>
+      <header className="topbar">
+        <div className="wordmark">
+          <span className="mark" aria-hidden="true" />
+          <span>Saunter</span>
         </div>
-        <nav className="masthead-r">
-          <span className="meta-pill">№14 · May 2026</span>
-        </nav>
+        <div className="topbar-r">
+          <span className="meta">Beta</span>
+          <EditionToggle />
+        </div>
       </header>
 
       <section className="hero">
-        <div className="hero-eyebrow">
-          <span className="rule-short" />
-          <span>A field guide, generated</span>
-          <span className="rule-short" />
-        </div>
-        <p className="hero-lede">
-          <span className="dropcap">S</span>aunter writes a walking tour of any neighborhood. Tell us
-          where you are, how long you have, and what you want to see. A quiet page arrives with a
-          map, a handful of stops, and audio for the walk.
+        <h1>
+          Walking tours,<br />
+          <span className="accent">written for you.</span>
+        </h1>
+        <p>
+          Tell Saunter where you are and how long you have. Get a route, a few
+          stops worth seeing, and audio for the walk.
         </p>
-        <div className="hero-action">
-          <Link className="hero-link" href="/new">
-            Make your own <span className="arrow">→</span>
+        <div className="cta-row">
+          <Link className="btn btn-accent" href="/new">
+            Make a walk
+            <span className="btn-arrow">→</span>
           </Link>
         </div>
       </section>
 
-      <section className="essays">
-        <div className="section-head">
-          <span className="section-no">No. 01</span>
-          <h2 className="section-title">Recently walked</h2>
-          <span className="section-meta">Nine of twenty</span>
+      <section className="walks">
+        <div className="walks-head">
+          <span className="label">
+            Recent walks · <strong>{rows.length} of {total}</strong>
+          </span>
         </div>
-
-        <div className="postcards">
-          {cards.map((c, i) => (
-            <Link
-              key={c.key}
-              href={c.href}
-              className={`postcard tone-${c.tone} span-${c.span}`}
-              style={{ animationDelay: `${i * 60}ms` }}
-            >
-              <div className="postcard-stamp">
-                <span className="stamp-no">{c.n}</span>
-                <span className="stamp-rule" />
-                <span className="stamp-min">{c.min} min</span>
+        {rows.map((r) => (
+          <Link key={r.key} href={r.href} className="walk-row">
+            <div className="walk-thumb">
+              <div className="image-slot" aria-hidden="true">
+                <span className="image-slot-label">{r.city}</span>
               </div>
-              <div className="postcard-art" aria-hidden="true">
-                <Postcard tone={c.tone} />
-              </div>
-              <div className="postcard-foot">
-                <h3 className="postcard-city">{c.city}</h3>
-                <p className="postcard-region">{c.region}</p>
-                <p className="postcard-tags">{c.tags}</p>
-              </div>
-            </Link>
-          ))}
-        </div>
+            </div>
+            <div className="walk-text">
+              <div className="walk-city">{r.city}</div>
+              <div className="walk-region">{r.region}</div>
+              <div className="walk-tags">{r.tags}</div>
+            </div>
+            <div className="walk-meta">
+              <div className="min">{r.min} min</div>
+              <div>walk</div>
+            </div>
+          </Link>
+        ))}
       </section>
 
       <footer className="colophon">
-        <p className="colophon-line">
-          Built on <em>OpenStreetMap</em>, <em>Wikipedia</em>, and <em>Wikimedia Commons</em>.
-        </p>
+        Routes drawn from OpenStreetMap. Notes drafted from Wikipedia and
+        Wikimedia Commons.
       </footer>
     </div>
   );
