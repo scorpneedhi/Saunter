@@ -1,6 +1,6 @@
 # Saunter — Roadmap
 
-**Status:** Pipeline complete, pre-launch hardening.
+**Status:** Pipeline complete, Phase 3 closed, pre-launch hardening.
 **Target public launch:** May 25, 2026 (PRD §1).
 **Last updated:** May 19, 2026.
 
@@ -44,8 +44,9 @@ Maps to PRD §12 days 5–7 and §13.
 
 ## Phase 3 — Post-launch (after May 25)
 
-The four original items completed ahead of schedule (May 19), on branch
-`claude/musing-bell-12e41e`. One item added later (latinize) is still open.
+All Phase 3 items complete. The four original items shipped ahead of
+schedule (May 19) on branch `claude/musing-bell-12e41e`; the latinize
+item shipped May 19 in [#7](https://github.com/scorpneedhi/Saunter/pull/7).
 
 - [x] **Real audio narration.** Replace the simulated scrubber with browser `SpeechSynthesis` reading each stop's blurb, synced to active stop + audio bar (PRD §6.2). Currently the only major spec item still mocked.
   - **Done:** browser `SpeechSynthesis` with sentence chunking (Chrome 15s-cutoff guard), `onboundary`-driven scrubber, `onend` auto-advance, gesture-synchronous `speak()` for mobile Safari, wall-clock fallback when `onboundary` is absent. Engine setters are render-phase-safe (`safeSet`, cherry-pick `e3a9a35`). Verified via real `SpeechSynthesisUtterance` events.
@@ -55,7 +56,8 @@ The four original items completed ahead of schedule (May 19), on branch
   - **Done:** structured JSON logger (`lib/log.ts`), per-step pipeline timing (`withTiming`), best-effort `tour_events` table + `metricsSummary`, generate/view/error events, and documented §10 metrics SQL (`docs/metrics.sql`). Degrades to a safe no-op when `DATABASE_URL` is unset.
 - [x] **No-Wikipedia-coverage polish.** Tune the OSM-only fallback blurbs (PRD §15) so coverage-thin neighborhoods still read well.
   - **Done:** descriptive OSM tags retained through `overpass.ts` → `enrich.ts`; varied, specific per-stop fallback copy (no more one repeated sentence); the LLM no-source branch now receives the OSM fact bundle instead of an empty marker.
-- [ ] **Latinize non-English place names.** Nominatim returns localized display names for some areas, so tour titles and the landing grid render e.g. "북촌한옥마을 ДЕРЕВНЯ" / "谷中" instead of "Bukchon" / "Yanaka" (observed on the seeded prod tours). Prefer the OSM `name:en` tag, falling back to transliteration, during geocode. Cosmetic only — links/resolution already work (the city slug segment is non-functional; `resolveTour` keys off the trailing id).
+- [x] **Latinize non-English place names.** Nominatim returns localized display names for some areas, so tour titles and the landing grid render e.g. "북촌한옥마을 ДЕРЕВНЯ" / "谷中" instead of "Bukchon" / "Yanaka" (observed on the seeded prod tours). Prefer the OSM `name:en` tag, falling back to transliteration, during geocode. Cosmetic only — links/resolution already work (the city slug segment is non-functional; `resolveTour` keys off the trailing id).
+  - **Done:** Nominatim now requested with `accept-language=en&namedetails=1`; new `latinize()` helper in `lib/pipeline/geocode.ts` prefers `namedetails["name:en"]`, passes already-Latin strings through, and transliterates the rest via the `transliteration` package. Applied to both `city` and `region`. Verified Yanaka, Bukchon, Arbat, and Greenwich Village. Re-seed prod (`DATABASE_URL=… npm run seed`) to refresh existing rows.
 
 ## Later — Post-MVP (PRD §14, not committed)
 
