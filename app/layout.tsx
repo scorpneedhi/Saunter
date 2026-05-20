@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { EDITION_BOOTSTRAP } from "@/components/EditionToggle";
 import "./globals.css";
 
 const siteUrl =
@@ -28,6 +29,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Apply the stored light/dusk edition before paint so reload never
+            flashes in the wrong palette. Sets data-edition on <html>. */}
+        <script
+          dangerouslySetInnerHTML={{ __html: EDITION_BOOTSTRAP }}
+        />
         {/* Geist isn't bundled in Next 14.2.5's next/font/google, so we load it
             from Google Fonts directly. globals.css consumes --font-geist /
             --font-geist-mono via a small @font-face-style fallback chain. */}

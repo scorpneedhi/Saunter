@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ECHO_PARK_TOUR, EXAMPLE_TOURS } from "@/lib/data";
 import { listTours } from "@/lib/pipeline/cache";
 import type { ExampleTour } from "@/lib/types";
+import { EditionToggle } from "@/components/EditionToggle";
 
 const slugify = (s: string) =>
   s
@@ -56,7 +57,10 @@ export async function Landing() {
           <span className="mark" aria-hidden="true" />
           <span>Saunter</span>
         </div>
-        <span className="meta">Beta</span>
+        <div className="topbar-r">
+          <span className="meta">Beta</span>
+          <EditionToggle />
+        </div>
       </header>
 
       <section className="hero">

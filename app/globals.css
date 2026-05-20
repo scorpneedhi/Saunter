@@ -141,6 +141,22 @@ img { max-width: 100%; display: block; }
   font-family: var(--mono); font-size: 11px; color: var(--muted);
   letter-spacing: 0.04em;
 }
+.topbar-r {
+  display: flex; align-items: center; gap: 12px;
+}
+
+/* Light / dusk toggle — small icon button. Used in the Landing topbar today;
+   the design system is shared so other surfaces can adopt it later. */
+.edition-toggle {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center;
+  color: var(--fg-2);
+  background: transparent;
+  border: 1px solid var(--hairline);
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.edition-toggle:hover { color: var(--fg); border-color: var(--hairline-strong); }
+.edition-toggle:active { background: var(--raised); }
 
 .hero { display: flex; flex-direction: column; gap: 18px; }
 .hero h1 {

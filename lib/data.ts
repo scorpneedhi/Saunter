@@ -124,17 +124,18 @@ export const ECHO_PARK_ROUTE: RoutePoint[] = [
   [0.44, 0.22], [0.5, 0.21], [0.58, 0.2], [0.64, 0.19], [0.7, 0.18],
 ];
 
-// Landing-page postcard examples.
+// Landing-page seed walks. Used as a fallback when the tour cache is empty
+// (e.g. on a fresh DB or no-DB run).
 export const EXAMPLE_TOURS: ExampleTour[] = [
-  { n: "01", city: "Lisbon", region: "Alfama", min: 75, tags: "miradouros, azulejos, slope", tone: "ochre", span: "tall" },
-  { n: "02", city: "Marrakech", region: "Medina", min: 90, tags: "souks, courtyards, water history", tone: "terra", span: "wide" },
-  { n: "03", city: "Kyoto", region: "Higashiyama", min: 60, tags: "temples, lanterns, tea", tone: "ink", span: "tall" },
-  { n: "04", city: "Mexico City", region: "Coyoacán", min: 90, tags: "muralism, courtyards, cantinas", tone: "rose", span: "wide" },
-  { n: "05", city: "Echo Park", region: "Los Angeles", min: 90, tags: "architecture, public art", tone: "sage", span: "tall" },
-  { n: "06", city: "Lower East Side", region: "Manhattan", min: 60, tags: "tenement history, signage, delis", tone: "brick", span: "wide" },
-  { n: "07", city: "Trastevere", region: "Rome", min: 75, tags: "fountains, cobbles, hidden chapels", tone: "stone", span: "tall" },
-  { n: "08", city: "Berlin", region: "Kreuzberg", min: 90, tags: "post-war, occupation, street art", tone: "ink", span: "wide" },
-  { n: "09", city: "Hanoi", region: "Old Quarter", min: 60, tags: "guild streets, lakeside, signage", tone: "ochre", span: "tall" },
+  { n: "01", city: "Lisbon", region: "Alfama", min: 75, tags: "miradouros, azulejos, slope" },
+  { n: "02", city: "Marrakech", region: "Medina", min: 90, tags: "souks, courtyards, water history" },
+  { n: "03", city: "Kyoto", region: "Higashiyama", min: 60, tags: "temples, lanterns, tea" },
+  { n: "04", city: "Mexico City", region: "Coyoacán", min: 90, tags: "muralism, courtyards, cantinas" },
+  { n: "05", city: "Echo Park", region: "Los Angeles", min: 90, tags: "architecture, public art" },
+  { n: "06", city: "Lower East Side", region: "Manhattan", min: 60, tags: "tenement history, signage, delis" },
+  { n: "07", city: "Trastevere", region: "Rome", min: 75, tags: "fountains, cobbles, hidden chapels" },
+  { n: "08", city: "Berlin", region: "Kreuzberg", min: 90, tags: "post-war, occupation, street art" },
+  { n: "09", city: "Hanoi", region: "Old Quarter", min: 60, tags: "guild streets, lakeside, signage" },
 ];
 
 // The prototype ships a single fleshed-out tour; every postcard routes to it.
